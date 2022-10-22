@@ -46,19 +46,6 @@ func NewMackerel(token, org, service, roles, filter, metrics string) Mackerel {
 	}
 }
 
-func (m Mackerel) GetMetrics() map[string]float64 {
-	a, b := m.client.FetchHostMetricValues("2x6jjwhDdjU", "cpu.user.percentage", 1666053720, 1666089720)
-	if b != nil {
-		return nil
-	}
-
-	for _, v := range a {
-		fmt.Println(time.Unix(v.Time, 0), v.Value)
-	}
-
-	return nil
-}
-
 func run() error {
 	m := NewMackerel(getMackerelToke(), opts.Origization, opts.Service, opts.Roles, opts.Filter, opts.Metrics)
 
@@ -72,13 +59,37 @@ func run() error {
 	switch opts.Metrics {
 	case "cpu":
 		targetMetricsList = []string{"cpu.user.percentage", "cpu.iowait.percentage", "cpu.system.percentage", "cpu.nice.percentage"}
+	case "iops":
+		targetMetricsList = []string{"custom.rds.diskiops.write", "custom.rds.diskiops.read"}
+	case "loadavg":
+		targetMetricsList = []string{"loadavg5"}
 	case "memory":
+		fallthrough
+	default:
 		return fmt.Errorf("Not Suppot Metrics")
 	}
 
 	hosts, err := m.FetchHosts()
+	var maxHostNameLen int = 0
+	for _, host := range hosts {
+		name, err := m.GetHostName(host)
+		if err != nil {
+			return err
+		}
+		if maxHostNameLen < len(strings.Split(name, ".")[0]) {
+			maxHostNameLen = len(strings.Split(name, ".")[0])
+		}
+	}
 
-	fmt.Printf("host\t\t\tmax\tmin\tavg\tp50\tp90\n")
+	fmt.Println(maxHostNameLen)
+
+	switch {
+	case maxHostNameLen < 22:
+		fmt.Printf("host\t\t\tmax\tmin\tavg\tp50\tp90\n")
+	case maxHostNameLen > 23 && maxHostNameLen < 40:
+		fmt.Printf("host\t\t\t\t\tmax\tmin\tavg\tp50\tp90\n")
+	}
+
 	eg := new(errgroup.Group)
 	for _, host := range hosts {
 		host := host
@@ -173,6 +184,7 @@ func Do() int {
 
 	err = run()
 	if err != nil {
+		logger.Error(err.Error())
 		return 1
 	}
 	return 0
